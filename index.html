@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>App Collaudi</title>
+</head>
+<body>
+  <h1>Gestione Collaudi</h1>
+
+  <!-- Login -->
+  <div id="login-div">
+    <h2>Login</h2>
+    <input type="email" id="email" placeholder="Email"><br>
+    <input type="password" id="password" placeholder="Password"><br>
+    <button onclick="login()">Login</button>
+    <p id="login-msg" style="color:red;"></p>
+  </div>
+
+  <!-- Studente -->
+  <div id="studente-div" style="display:none;">
+    <h2>Prenota Collaudo</h2>
+    <input type="datetime-local" id="prenotazione">
+    <button onclick="prenotaCollaudo()">Prenota</button>
+    <p id="prenota-msg" style="color:green;"></p>
+  </div>
+
+  <!-- Docente -->
+  <div id="docente-div" style="display:none;">
+    <h2>Lista Collaudi</h2>
+    <table border="1" id="collaudi-table">
+      <tr><th>Studente</th><th>Data Prenotazione</th><th>Commento</th><th>Foto</th></tr>
+    </table>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script>
+    // === Inserisci qui i dati Supabase ===
+    const supabaseUrl = 'TUO_SUPABASE_URL';
+    const supabaseKey = 'TUO_ANON_KEY';
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    let currentUser = null;
+    let currentRole = null;
+
+    // === Login email + password tramite Supabase Auth ===
+    async function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const msg = document.getElementById('login-msg');
+      msg.innerText = '';
+
+      if(!email || !password) {
+        msg.innerText = "Inserisci email e password";
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if(error) {
+        msg.innerText = error.message;
+        return;
+      }
+
+      currentUser = data.user;
+
+      // Ottieni ruolo dalla tabella users
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', currentUser.id)
+        .single();
+
+      if(userError) {
+        msg.innerText = userError.message;
+        return;
+      }
+
+      currentRole = userData.role;
+      document.getElementById('login-div').style.display = 'none';
+
+      if(currentRole === 'studente') {
+        document.getElementById('studente-div').style.display = 'block';
+      } else if(currentRole === 'docente') {
+        document.getElementById('docente-div').style.display = 'block';
+        listaCollaudi();
+      }
+    }
+
+    // === Prenotazione collaudo (studente) ===
+    async function prenotaCollaudo() {
+      const data = document.getElementById('prenotazione').value;
+      const msg = document.getElementById('prenota-msg');
+      msg.innerText = '';
+
+      if(!data) {
+        msg.innerText = 'Seleziona una data';
+        return;
+      }
+
+      const { error } = await supabase
+        .from('collaudi')
+        .insert([{ student_id: currentUser.id, prenotazione: data }]);
+
+      if(error) {
+        msg.innerText = error.message;
+        return;
+      }
+
+      msg.innerText = 'Prenotazione confermata!';
+      document.getElementById('prenotazione').value = '';
+    }
+
+    // === Lista collaudi (docente) ===
+    async function listaCollaudi() {
+      const { data, error } = await supabase
+        .from('collaudi')
+        .select('id, student_id, prenotazione, commento, foto_url, users(email)')
+        .order('created_at', { ascending: true });
+
+      if(error) return alert(error.message);
+
+      const table = document.getElementById('collaudi-table');
+      table.innerHTML = '<tr><th>Studente</th><th>Data Prenotazione</th><th>Commento</th><th>Foto</th></tr>';
+
+      for(const c of data) {
+        const row = table.insertRow();
+        row.insertCell(0).innerText = c.users?.email || '';
+        row.insertCell(1).innerText = new Date(c.prenotazione).toLocaleString();
+        row.insertCell(2).innerText = c.commento || '';
+        if(c.foto_url)
+          row.insertCell(3).innerHTML = `<a href="${c.foto_url}" target="_blank">Vedi Foto</a>`;
+        else
+          row.insertCell(3).innerText = '';
+      }
+    }
+  </script>
+</body>
+</html>
